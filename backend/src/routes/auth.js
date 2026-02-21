@@ -7,6 +7,72 @@ const { authenticate } = require('../middleware/auth');
 const router = express.Router();
 const prisma = new PrismaClient();
 
+// POST /api/auth/signup - Register new user
+router.post('/signup', async (req, res) => {
+  try {
+    const { name, email, password, role, department } = req.body;
+
+    // Validation
+    if (!name || !email || !password || !role || !department) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Prevent Managing Director role selection
+    if (role === 'MANAGING_DIRECTOR') {
+      return res.status(400).json({ message: 'Invalid role selection' });
+    }
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ message: 'Email already registered' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        role,
+        department,
+        isActive: true
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        department: true,
+        isActive: true,
+        createdAt: true
+      }
+    });
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      message: 'User created successfully',
+      token,
+      user
+    });
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {

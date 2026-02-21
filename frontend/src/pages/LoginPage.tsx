@@ -123,12 +123,27 @@ export default function LoginPage() {
           <div className="mt-4">
             <button
               type="button"
+              onClick={() => navigate('/signup')}
               className="w-full flex items-center justify-center gap-2 py-3 px-6
                 border border-white/20 text-zinc-300 font-medium rounded-xl
                 hover:bg-white/5 transition-all duration-200"
             >
               Sign Up
             </button>
+          </div>
+
+          {/* Login Link */}
+          <div className="mt-6 text-center">
+            <p className="text-zinc-400 text-sm">
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={() => navigate('/login')}
+                className="text-brand-teal hover:text-brand-mint transition-colors font-medium"
+              >
+                Login
+              </button>
+            </p>
           </div>
         </div>
       </div>
