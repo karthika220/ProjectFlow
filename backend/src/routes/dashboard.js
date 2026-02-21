@@ -6,8 +6,23 @@ const router = express.Router();
 const prisma = new PrismaClient();
 
 // GET /api/dashboard/stats
-router.get('/stats', async (req, res) => {
+router.get('/stats', authenticate, async (req, res) => {
   try {
+    console.log('Dashboard stats - User:', { id: req.user.id, role: req.user.role, name: req.user.name });
+    
+    // Build user-specific filters
+    const projectFilter = {};
+    const taskFilter = {};
+    
+    // Apply user role filters (same as projects and tasks endpoints)
+    if (req.user.role === 'EMPLOYEE' || req.user.role === 'TEAM_LEAD') {
+      projectFilter.OR = [
+        { ownerId: req.user.id },
+        { members: { some: { userId: req.user.id } } },
+      ];
+      taskFilter.assigneeId = req.user.id;
+    }
+    
     const [
       activeProjects,
       completedTasks,
@@ -15,18 +30,25 @@ router.get('/stats', async (req, res) => {
       teamMembers,
       totalProjects
     ] = await Promise.all([
-      prisma.project.count({ where: { status: 'IN_PROGRESS' } }),
-      prisma.task.count({ where: { status: 'DONE' } }),
+      prisma.project.count({ 
+        where: { ...projectFilter, status: 'IN_PROGRESS' } 
+      }),
+      prisma.task.count({ 
+        where: { ...taskFilter, status: 'DONE' } 
+      }),
       prisma.task.count({
         where: { 
+          ...taskFilter,
           dueDate: { lt: new Date() }, 
           status: { not: 'DONE' } 
         }
       }),
       prisma.user.count({ where: { isActive: true } }),
-      prisma.project.count()
+      prisma.project.count({ where: projectFilter })
     ]);
 
+    console.log('Dashboard stats result:', { activeProjects, completedTasks, overdueTasks, teamMembers, totalProjects });
+    
     res.json({
       activeProjects,
       completedTasks,
@@ -35,19 +57,28 @@ router.get('/stats', async (req, res) => {
       totalProjects
     });
   } catch (err) {
-    console.error(err);
+    console.error('Dashboard stats error:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
 // GET /api/dashboard/task-weekly
-router.get('/task-weekly', async (req, res) => {
+router.get('/task-weekly', authenticate, async (req, res) => {
   try {
+    console.log('Dashboard task-weekly - User:', { id: req.user.id, role: req.user.role });
+    
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
+    // Apply user role filters (same as tasks endpoint)
+    const taskFilter = {};
+    if (req.user.role === 'EMPLOYEE') {
+      taskFilter.assigneeId = req.user.id;
+    }
+    
     const tasks = await prisma.task.findMany({
       where: {
+        ...taskFilter,
         OR: [
           { createdAt: { gte: sevenDaysAgo } },
           { status: 'DONE', updatedAt: { gte: sevenDaysAgo } }
@@ -84,18 +115,29 @@ router.get('/task-weekly', async (req, res) => {
       result.push({ day: dayName, created, completed });
     }
     
+    console.log('Dashboard task-weekly result:', result.length, 'days');
     res.json(result);
   } catch (err) {
-    console.error(err);
+    console.error('Dashboard task-weekly error:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
 // GET /api/dashboard/team-utilization
-router.get('/team-utilization', async (req, res) => {
+router.get('/team-utilization', authenticate, async (req, res) => {
   try {
+    console.log('Dashboard team-utilization - User:', { id: req.user.id, role: req.user.role });
+    
+    // Apply user role filters (same as tasks endpoint)
+    const taskFilter = {};
+    if (req.user.role === 'EMPLOYEE') {
+      taskFilter.assigneeId = req.user.id;
+    }
+    
     const [totalTasks, teamMembers] = await Promise.all([
-      prisma.task.count({ where: { assigneeId: { not: null } } }),
+      prisma.task.count({ 
+        where: { ...taskFilter, assigneeId: { not: null } } 
+      }),
       prisma.user.count({ where: { isActive: true } })
     ]);
     
@@ -103,20 +145,34 @@ router.get('/team-utilization', async (req, res) => {
     const maxTasksPerMember = 10; // Assume 10 tasks is 100% utilization
     const utilizationPercent = Math.min((avgTasksPerMember / maxTasksPerMember) * 100, 100);
     
+    console.log('Dashboard team-utilization result:', { inUse: Math.round(utilizationPercent), available: Math.round(100 - utilizationPercent) });
+    
     res.json({
       inUse: Math.round(utilizationPercent),
       available: Math.round(100 - utilizationPercent)
     });
   } catch (err) {
-    console.error(err);
+    console.error('Dashboard team-utilization error:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
 // GET /api/dashboard/project-health
-router.get('/project-health', async (req, res) => {
+router.get('/project-health', authenticate, async (req, res) => {
   try {
+    console.log('Dashboard project-health - User:', { id: req.user.id, role: req.user.role });
+    
+    // Apply user role filters (same as projects endpoint)
+    const projectFilter = {};
+    if (req.user.role === 'EMPLOYEE' || req.user.role === 'TEAM_LEAD') {
+      projectFilter.OR = [
+        { ownerId: req.user.id },
+        { members: { some: { userId: req.user.id } } },
+      ];
+    }
+    
     const projects = await prisma.project.findMany({
+      where: projectFilter,
       include: {
         tasks: {
           select: {
@@ -138,9 +194,10 @@ router.get('/project-health', async (req, res) => {
       };
     });
     
+    console.log('Dashboard project-health result:', result.length, 'projects');
     res.json(result);
   } catch (err) {
-    console.error(err);
+    console.error('Dashboard project-health error:', err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -171,15 +228,27 @@ router.get('/my-tasks', authenticate, async (req, res) => {
 });
 
 // GET /api/dashboard/milestones
-router.get('/milestones', async (req, res) => {
+router.get('/milestones', authenticate, async (req, res) => {
   try {
+    console.log('Dashboard milestones - User:', { id: req.user.id, role: req.user.role });
+    
     const fourteenDaysFromNow = new Date();
     fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
+    
+    // Apply user role filters (same as projects endpoint)
+    const projectFilter = {};
+    if (req.user.role === 'EMPLOYEE' || req.user.role === 'TEAM_LEAD') {
+      projectFilter.OR = [
+        { ownerId: req.user.id },
+        { members: { some: { userId: req.user.id } } },
+      ];
+    }
     
     const milestones = await prisma.milestone.findMany({
       where: {
         targetDate: { gte: new Date(), lte: fourteenDaysFromNow },
-        isCompleted: false
+        isCompleted: false,
+        project: projectFilter
       },
       include: {
         project: {
@@ -189,17 +258,32 @@ router.get('/milestones', async (req, res) => {
       orderBy: { targetDate: 'asc' }
     });
     
+    console.log('Dashboard milestones result:', milestones.length, 'milestones');
     res.json(milestones);
   } catch (err) {
-    console.error(err);
+    console.error('Dashboard milestones error:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
 // GET /api/dashboard/activity
-router.get('/activity', async (req, res) => {
+router.get('/activity', authenticate, async (req, res) => {
   try {
+    console.log('Dashboard activity - User:', { id: req.user.id, role: req.user.role });
+    
+    // Apply user role filters (same as projects endpoint)
+    const projectFilter = {};
+    if (req.user.role === 'EMPLOYEE' || req.user.role === 'TEAM_LEAD') {
+      projectFilter.OR = [
+        { ownerId: req.user.id },
+        { members: { some: { userId: req.user.id } } },
+      ];
+    }
+    
     const activities = await prisma.activity.findMany({
+      where: {
+        project: projectFilter
+      },
       orderBy: { createdAt: 'desc' },
       take: 10,
       include: {
@@ -209,18 +293,28 @@ router.get('/activity', async (req, res) => {
       }
     });
     
+    console.log('Dashboard activity result:', activities.length, 'activities');
     res.json(activities);
   } catch (err) {
-    console.error(err);
+    console.error('Dashboard activity error:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
 // GET /api/dashboard/task-completion
-router.get('/task-completion', async (req, res) => {
+router.get('/task-completion', authenticate, async (req, res) => {
   try {
+    console.log('Dashboard task-completion - User:', { id: req.user.id, role: req.user.role });
+    
+    // Apply user role filters (same as tasks endpoint)
+    const taskFilter = {};
+    if (req.user.role === 'EMPLOYEE') {
+      taskFilter.assigneeId = req.user.id;
+    }
+    
     const tasksByStatus = await prisma.task.groupBy({
       by: ['status'],
+      where: taskFilter,
       _count: { id: true },
     });
     
@@ -232,12 +326,13 @@ router.get('/task-completion', async (req, res) => {
       percentage: totalTasks > 0 ? Math.round((group._count.id / totalTasks) * 100) : 0
     }));
     
+    console.log('Dashboard task-completion result:', { totalTasks, breakdown: result });
     res.json({
       totalTasks,
       breakdown: result
     });
   } catch (err) {
-    console.error(err);
+    console.error('Dashboard task-completion error:', err);
     res.status(500).json({ message: err.message });
   }
 });
