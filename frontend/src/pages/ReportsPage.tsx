@@ -34,6 +34,20 @@ const REPORT_TYPES = [
   { value: 'TIMESHEET', label: 'Timesheet Report', icon: Clock },
 ]
 
+// Fixed color mapping for status consistency
+const STATUS_COLOR_MAP: Record<string, string> = {
+  DONE: 'bg-brand-mint/20 text-brand-mint ring-brand-mint/30',
+  IN_PROGRESS: 'bg-brand-teal/20 text-brand-teal ring-brand-teal/30', 
+  IN_REVIEW: 'bg-yellow-500/20 text-yellow-400 ring-yellow-500/30',
+  TODO: 'bg-blue-500/20 text-blue-400 ring-blue-500/30',
+  COMPLETED: 'bg-green-500/20 text-green-400 ring-green-500/30',
+  PLANNING: 'bg-orange-500/20 text-orange-400 ring-orange-500/30',
+  ACTIVE: 'bg-green-500/20 text-green-400 ring-green-500/30',
+  ON_HOLD: 'bg-red-500/20 text-red-400 ring-red-500/30',
+  ARCHIVED: 'bg-zinc-500/20 text-zinc-400 ring-zinc-500/30',
+  OVERDUE: 'bg-red-500/20 text-red-400 ring-red-500/30'
+}
+
 export default function ReportsPage() {
   const { user } = useAuthStore()
   const [reports, setReports] = useState<any[]>([])
@@ -56,6 +70,13 @@ export default function ReportsPage() {
     loadReports()
     loadDonutData()
     loadProjects()
+    
+    // Set up periodic refresh for live updates (every 30 seconds)
+    const interval = setInterval(() => {
+      loadDonutData()
+    }, 30000)
+    
+    return () => clearInterval(interval)
   }, [])
 
   const loadDonutData = async () => {
@@ -135,8 +156,8 @@ export default function ReportsPage() {
     }
   }
 
-  // Donut chart component
-  const DonutChart = ({ data, title, colors }: { data: any[], title: string, colors: string[] }) => {
+  // Donut chart component with fixed status-based color mapping
+  const DonutChart = ({ data, title }: { data: any[], title: string }) => {
     const total = data.reduce((sum, item) => sum + item.count, 0)
     let previousOffset = 0
     
@@ -147,7 +168,7 @@ export default function ReportsPage() {
           <div className="relative w-32 h-32">
             <svg className="w-32 h-32 -rotate-90" viewBox="0 0 120 120">
               <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="12" />
-              {data.map((segment, index) => {
+              {data.map((segment) => {
                 const percentage = total > 0 ? (segment.count / total) * 100 : 0
                 const circumference = 2 * Math.PI * 50
                 const dashArray = circumference * (percentage / 100)
@@ -155,11 +176,23 @@ export default function ReportsPage() {
                 
                 previousOffset += circumference * (percentage / 100)
                 
+                // Use status-based color mapping with proper Tailwind classes
+                const colorClass = STATUS_COLOR_MAP[segment.status] || 'bg-zinc-500/20 text-zinc-400 ring-zinc-500/30'
+                // Extract hex color from Tailwind class for SVG stroke
+                const colorHex = colorClass.includes('brand-mint') ? '#00FFAA' :
+                               colorClass.includes('brand-teal') ? '#00A1C7' :
+                               colorClass.includes('yellow-400') ? '#FFD700' :
+                               colorClass.includes('blue-400') ? '#8B5CF6' :
+                               colorClass.includes('green-400') ? '#10B981' :
+                               colorClass.includes('orange-400') ? '#F59E0B' :
+                               colorClass.includes('red-400') ? '#EF4444' :
+                               '#6B7280'
+                
                 return (
                   <circle
-                    key={segment.status}
+                    key={`${segment.status}-${segment.count}`}
                     cx="60" cy="60" r="50" fill="none"
-                    stroke={colors[index % colors.length]}
+                    stroke={colorHex}
                     strokeWidth="12"
                     strokeLinecap="round"
                     strokeDasharray={dashArray}
@@ -226,14 +259,12 @@ export default function ReportsPage() {
           <DonutChart 
             data={taskStatusData}
             title="Task Status Distribution"
-            colors={['#00FFAA', '#00A1C7', '#FFD700', '#8B5CF6', '#EF4444']}
           />
           
           {/* Project Status Distribution */}
           <DonutChart 
             data={projectStatusData}
             title="Project Status Distribution"
-            colors={['#10B981', '#F59E0B', '#6366F1']}
           />
         </div>
       </div>
@@ -303,7 +334,6 @@ export default function ReportsPage() {
             <DonutChart 
               data={projectReport.tasksByStatus}
               title="Task Status Breakdown"
-              colors={['#00FFAA', '#00A1C7', '#FFD700', '#8B5CF6', '#EF4444']}
             />
             
             <div className="bg-[#09090B] border border-white/10 rounded-2xl p-5">
@@ -372,9 +402,41 @@ export default function ReportsPage() {
                   {/* Expanded data */}
                   {selectedReport?.id === report.id && (
                     <div className="mt-4 pt-4 border-t border-white/10">
-                      <pre className="text-xs text-zinc-400 bg-black/30 rounded-lg p-4 overflow-auto max-h-60">
-                        {JSON.stringify(report.data, null, 2)}
-                      </pre>
+                      <div className="space-y-4">
+                        {report.data && typeof report.data === 'object' ? (
+                          // Render as table for structured data
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                              <thead>
+                                <tr className="border-b border-white/10">
+                                  <th className="px-4 py-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
+                                  <th className="px-4 py-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Count</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {report.data.tasksByStatus?.map((status: any) => (
+                                  <tr key={status.status} className="border-b border-white/5">
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLOR_MAP[status.status] || 'bg-zinc-500/20 text-zinc-400'}`}>
+                                        <div className="w-2 h-2 rounded-full bg-current" />
+                                        {status.status}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                      <span className="font-mono text-zinc-300">{status.count}</span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          // Fallback for non-object data
+                          <pre className="text-xs text-zinc-400 bg-black/30 rounded-lg p-4 overflow-auto max-h-60">
+                            {JSON.stringify(report.data, null, 2)}
+                          </pre>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

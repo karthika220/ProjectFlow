@@ -29,11 +29,33 @@ router.get('/', authenticate, async (req, res) => {
         members: {
           include: { user: { select: { id: true, name: true, email: true, avatar: true } } },
         },
+        tasks: {
+          select: { 
+            id: true, 
+            status: true 
+          }
+        },
         _count: { select: { tasks: true, milestones: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(projects);
+
+    // Calculate progress for each project
+    const projectsWithProgress = projects.map(project => {
+      const totalTasks = project.tasks.length;
+      const completedTasks = project.tasks.filter(task => task.status === 'DONE').length;
+      const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      
+      // Remove tasks from response to avoid sending unnecessary data
+      const { tasks, ...projectWithoutTasks } = project;
+      
+      return {
+        ...projectWithoutTasks,
+        progress
+      };
+    });
+
+    res.json(projectsWithProgress);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -62,7 +84,19 @@ router.get('/:id', authenticate, async (req, res) => {
       },
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
-    res.json(project);
+
+    // Calculate progress for the project
+    const totalTasks = project.tasks.length;
+    const completedTasks = project.tasks.filter(task => task.status === 'DONE').length;
+    const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    // Add progress to project object
+    const projectWithProgress = {
+      ...project,
+      progress
+    };
+
+    res.json(projectWithProgress);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -137,7 +171,7 @@ router.put('/:id', authenticate, async (req, res) => {
 });
 
 // DELETE /api/projects/:id
-router.delete('/:id', authenticate, authorize('MANAGING_DIRECTOR', 'HR_MANAGER'), async (req, res) => {
+router.delete('/:id', authenticate, authorize('MANAGING_DIRECTOR', 'HR_MANAGER', 'TEAM_LEAD'), async (req, res) => {
   try {
     await prisma.project.delete({ where: { id: req.params.id } });
     res.json({ message: 'Project deleted' });

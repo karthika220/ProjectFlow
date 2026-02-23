@@ -8,7 +8,9 @@
     "start": "node src/index.js",
     "db:push": "npx prisma db push",
     "db:seed": "node prisma/seed.js",
-    "db:studio": "npx prisma studio"
+    "db:studio": "npx prisma studio",
+    "notifications:check-overdue": "node src/utils/notificationJobs.js",
+    "notifications:seed-demo": "node src/utils/seedNotifications.js"
   },
   "dependencies": {
     "@prisma/client": "^5.7.0",
@@ -17,7 +19,8 @@
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^8.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",

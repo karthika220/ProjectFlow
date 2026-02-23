@@ -5,6 +5,28 @@ import { useAuthStore } from '../store/authStore'
 import api from '../api/axios'
 import { format } from 'date-fns'
 
+// CSS for scrollable tasks container
+const styles = `
+.my-open-tasks {
+  max-height: 260px;
+  overflow-y: auto;
+}
+`
+
+// Fixed color mapping for status consistency
+const STATUS_COLOR_MAP: Record<string, string> = {
+  DONE: '#00FFAA',
+  IN_PROGRESS: '#00A1C7', 
+  IN_REVIEW: '#FFD700',
+  TODO: '#8B5CF6',
+  COMPLETED: '#10B981',
+  PLANNING: '#F59E0B',
+  ACTIVE: '#10B981',
+  ON_HOLD: '#EF4444',
+  ARCHIVED: '#6B7280',
+  OVERDUE: '#EF4444'
+}
+
 interface DashboardStats {
   activeProjects: number
   completedTasks: number
@@ -35,6 +57,7 @@ interface MyTask {
   status: string
   priority: string
   dueDate?: string
+  createdAt: string
   project: {
     name: string
     color: string
@@ -139,7 +162,26 @@ export default function DashboardPage() {
     }
 
     fetchDashboardData()
+    
+    // Set up periodic refresh for live updates (every 30 seconds)
+    const interval = setInterval(() => {
+      fetchDashboardData()
+    }, 30000)
+    
+    return () => clearInterval(interval)
   }, [])
+
+  // Filter tasks by open statuses and sort by latest first
+  const openTasks = Array.isArray(myTasks)
+    ? myTasks
+        .filter(t => !["DONE", "COMPLETED"].includes(t.status))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5) // Maximum 5 tasks initially
+    : [];
+
+  // Debug: Log myTasks data
+  console.log('My Tasks Data:', myTasks);
+  console.log('Open Tasks:', openTasks);
 
   if (loading) {
     return (
@@ -150,7 +192,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <>
+      <style>{styles}</style>
+      <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div>
         <h1 className="font-rubik font-bold text-2xl text-white">
@@ -256,12 +300,12 @@ export default function DashboardPage() {
         </div>
 
         {/* Project Health Bars */}
-        <div className="bg-[#09090B] border border-white/10 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-4">
+        <div className="bg-[#09090B] border border-white/10 rounded-2xl p-5 flex flex-col" style={{ height: '320px' }}>
+          <div className="flex items-center gap-2 mb-4 flex-shrink-0">
             <Target className="w-5 h-5 text-brand-orange" />
             <h2 className="font-rubik font-semibold text-white">Project Health</h2>
           </div>
-          <div className="space-y-3">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-3">
             {projectHealth.length === 0 && (
               <div className="text-center py-8 text-zinc-600 text-sm">No projects to display</div>
             )}
@@ -301,11 +345,10 @@ export default function DashboardPage() {
             <div className="relative w-32 h-32">
               <svg className="w-32 h-32 -rotate-90" viewBox="0 0 120 120">
                 <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="12" />
-                {taskCompletion?.breakdown?.map((segment, index) => {
-                  const colors = ['#00FFAA', '#00A1C7', '#FFD700', '#FF6B6B', '#8B5CF6'];
+                {taskCompletion?.breakdown?.map((segment) => {
                   let previousOffset = 0;
                   
-                  for (let i = 0; i < index; i++) {
+                  for (let i = 0; i < taskCompletion.breakdown.findIndex(b => b.status === segment.status); i++) {
                     previousOffset += (taskCompletion.breakdown[i].percentage / 100) * 2 * Math.PI * 50;
                   }
                   
@@ -314,11 +357,14 @@ export default function DashboardPage() {
                   const dashArray = circumference * percentage;
                   const dashOffset = circumference * 0.25 - previousOffset;
                   
+                  // Use status-based color mapping instead of array index
+                  const color = STATUS_COLOR_MAP[segment.status] || '#6B7280';
+                  
                   return (
                     <circle
-                      key={segment.status}
+                      key={`${segment.status}-${segment.count}`}
                       cx="60" cy="60" r="50" fill="none"
-                      stroke={colors[index % colors.length]}
+                      stroke={color}
                       strokeWidth="12"
                       strokeLinecap="round"
                       strokeDasharray={dashArray}
@@ -365,29 +411,44 @@ export default function DashboardPage() {
               View all →
             </Link>
           </div>
-          <div className="space-y-3">
-            {myTasks.length === 0 && (
-              <div className="text-center py-8 text-zinc-600">No open tasks assigned to you</div>
+          <div className="my-open-tasks space-y-3" style={{ maxHeight: '320px', overflowY: 'auto' }}>
+            {openTasks.length === 0 ? (
+              <p className="text-center py-8 text-zinc-600">No open tasks assigned to you</p>
+            ) : (
+              openTasks.map(task => (
+                <Link 
+                  key={task.id} 
+                  to={`/tasks/${task.id}`}
+                  className="task-row flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:border-white/10 transition-all group cursor-pointer"
+                >
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    task.status === 'TODO' ? 'bg-zinc-400' :
+                    task.status === 'IN_PROGRESS' ? 'bg-brand-teal' :
+                    task.status === 'IN_REVIEW' ? 'bg-yellow-400' :
+                    'bg-brand-teal'
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white font-medium truncate">{task.title}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-zinc-500">{task.project?.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        task.status === 'TODO' ? 'bg-zinc-500/20 text-zinc-400' :
+                        task.status === 'IN_PROGRESS' ? 'bg-brand-teal/20 text-brand-teal' :
+                        task.status === 'IN_REVIEW' ? 'bg-yellow-500/20 text-yellow-400' :
+                        'bg-zinc-500/20 text-zinc-400'
+                      }`}>
+                        {task.status.replace('_', ' ')}
+                      </span>
+                      {task.dueDate && (
+                        <span className="text-xs text-zinc-500">
+                          Due: {format(new Date(task.dueDate), 'MMM dd')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              ))
             )}
-            {myTasks.map((task) => (
-              <div key={task.id} className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:border-white/10 transition-all group">
-                <div className="w-2 h-2 rounded-full bg-brand-teal flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-white font-medium truncate">{task.title}</div>
-                  <div className="text-xs text-zinc-500 mt-0.5">{task.project?.name}</div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {task.dueDate && (
-                    <span className="text-xs text-zinc-500">
-                      {format(new Date(task.dueDate), 'MMM dd')}
-                    </span>
-                  )}
-                  <span className={`text-xs font-bold ${PRIORITY_COLORS[task.priority]}`}>
-                    {task.priority}
-                  </span>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -444,5 +505,6 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  </>
   )
 }

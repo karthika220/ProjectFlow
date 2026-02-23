@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, FolderKanban, Users, CheckSquare, Calendar, Tag, X } from 'lucide-react'
+import { Plus, Search, FolderKanban, Users, CheckSquare, Calendar, Tag, X, LayoutGrid, List, Edit } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api from '../api/axios'
 import { format } from 'date-fns'
@@ -11,7 +11,28 @@ const STATUS_COLORS: Record<string, string> = {
   IN_PROGRESS: 'bg-brand-teal/15 text-brand-teal ring-brand-teal/30',
   ON_HOLD: 'bg-yellow-500/15 text-yellow-400 ring-yellow-500/30',
   COMPLETED: 'bg-brand-mint/15 text-brand-mint ring-brand-mint/30',
-  ARCHIVED: 'bg-zinc-700/20 text-zinc-600 ring-zinc-700/30',
+  ARCHIVED: 'bg-zinc-500/20 text-zinc-400 ring-zinc-500/30',
+}
+
+// Real project names mapping
+const getRealProjectName = (originalName: string): string => {
+  const projectMapping: Record<string, string> = {
+    'Website Redesign': 'Rentla',
+    'Security Audit': 'IT World',
+    'Mobile App': 'Space Inc.',
+    'Data Migration': 'Anthilla Architectz',
+    'API Development': 'The Detailing Mafia | Sarjapura',
+    'UI Redesign': 'The Detailing Mafia | Kalyan Nagar',
+    'Database Update': 'Motofence | Bangalore',
+    'Cloud Migration': 'Detailing Wolves | Tirupur',
+    'Performance Optimization': 'Uniq Customz',
+    'Feature Development': 'One Stop Automotive',
+    'Testing Suite': 'MMA 360',
+    'Documentation': 'DIYA Robotics | Malaysia',
+    'Code Review': 'Drive Dynamix'
+  }
+  
+  return projectMapping[originalName] || originalName
 }
 
 export default function ProjectsPage() {
@@ -21,12 +42,18 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [editingProject, setEditingProject] = useState<any>(null)
   const [allUsers, setAllUsers] = useState<any[]>([])
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false)
+  const ownerDropdownRef = useRef<HTMLDivElement>(null)
 
   const [form, setForm] = useState({
     name: '', description: '', status: 'PLANNING',
     startDate: '', endDate: '', budget: '', color: '#00A1C7', tags: '',
     memberIds: [] as string[],
+    createdBy: user?.id || '',
+    ownerIds: [] as string[],
   })
 
   const canCreate = ['MANAGING_DIRECTOR', 'HR_MANAGER', 'TEAM_LEAD'].includes(user?.role || '')
@@ -36,7 +63,24 @@ export default function ProjectsPage() {
     if (canCreate) {
       api.get('/users').then(r => setAllUsers(r.data))
     }
+    // Load view mode from localStorage
+    const savedViewMode = localStorage.getItem('projectsViewMode')
+    if (savedViewMode === 'list' || savedViewMode === 'grid') {
+      setViewMode(savedViewMode)
+    }
   }, [statusFilter])
+
+  // Close owner dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ownerDropdownRef.current && !ownerDropdownRef.current.contains(event.target as Node)) {
+        setShowOwnerDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const loadProjects = async () => {
     setLoading(true)
@@ -53,22 +97,60 @@ export default function ProjectsPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await api.post('/projects', {
+      const projectData = {
         ...form,
         tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
-      })
+        budget: form.budget ? parseFloat(form.budget) : null,
+        startDate: form.startDate ? new Date(form.startDate) : null,
+        endDate: form.endDate ? new Date(form.endDate) : null,
+      }
+      
+      if (editingProject) {
+        // Update existing project
+        await api.put(`/projects/${editingProject.id}`, projectData)
+        setEditingProject(null)
+      } else {
+        // Create new project
+        await api.post('/projects', projectData)
+      }
+      
       setShowModal(false)
-      setForm({ name: '', description: '', status: 'PLANNING', startDate: '', endDate: '', budget: '', color: '#00A1C7', tags: '', memberIds: [] })
+      setForm({ name: '', description: '', status: 'PLANNING', startDate: '', endDate: '', budget: '', color: '#00A1C7', tags: '', memberIds: [], createdBy: user?.id || '', ownerIds: [] })
       loadProjects()
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Error creating project')
+      alert(err.response?.data?.message || 'Error saving project')
     }
   }
 
-  const filtered = projects.filter(p =>
+  const handleEdit = (project: any) => {
+    setEditingProject(project)
+    setForm({
+      name: project.name || '',
+      description: project.description || '',
+      status: project.status || 'PLANNING',
+      startDate: project.startDate ? new Date(project.startDate).toISOString().split('T')[0] : '',
+      endDate: project.endDate ? new Date(project.endDate).toISOString().split('T')[0] : '',
+      budget: project.budget?.toString() || '',
+      color: project.color || '#00A1C7',
+      tags: Array.isArray(project.tags) ? project.tags.join(', ') : '',
+      memberIds: project.members?.map((m: any) => m.user.id) || [],
+      createdBy: project.createdBy || user?.id || '',
+      ownerIds: project.owners?.map((o: any) => o.id) || [],
+    })
+    setShowModal(true)
+  }
+
+  const safeProjects = Array.isArray(projects) ? projects : [];
+
+  const filtered = safeProjects.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.description?.toLowerCase().includes(search.toLowerCase())
   )
+
+  const handleViewModeChange = (mode: 'grid' | 'list') => {
+    setViewMode(mode)
+    localStorage.setItem('projectsViewMode', mode)
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -107,11 +189,35 @@ export default function ProjectsPage() {
           <option value="">All Statuses</option>
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
         </select>
+        <div className="flex bg-[#18181B] border border-white/10 rounded-xl p-1">
+          <button
+            onClick={() => handleViewModeChange('grid')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              viewMode === 'grid'
+                ? 'bg-brand-teal/20 text-brand-teal'
+                : 'text-zinc-500 hover:text-white'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            Grid
+          </button>
+          <button
+            onClick={() => handleViewModeChange('list')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              viewMode === 'list'
+                ? 'bg-brand-teal/20 text-brand-teal'
+                : 'text-zinc-500 hover:text-white'
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            List
+          </button>
+        </div>
       </div>
 
-      {/* Grid */}
+      {/* Grid or List */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}>
           {[...Array(6)].map((_, i) => (
             <div key={i} className="bg-[#09090B] border border-white/5 rounded-2xl p-5 h-52 animate-pulse">
               <div className="h-4 bg-white/5 rounded w-2/3 mb-3" />
@@ -121,7 +227,7 @@ export default function ProjectsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}>
           {filtered.map(project => (
             <Link
               key={project.id}
@@ -139,14 +245,59 @@ export default function ProjectsPage() {
                   </div>
                   <div>
                     <h3 className="font-rubik font-semibold text-white text-sm group-hover:text-brand-teal transition-colors line-clamp-1">
-                      {project.name}
+                      {getRealProjectName(project.name)}
                     </h3>
                     <span className="text-xs text-zinc-500">{project.owner?.name}</span>
                   </div>
                 </div>
-                <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ring-1 ${STATUS_COLORS[project.status]}`}>
-                  {project.status.replace('_', ' ')}
-                </span>
+                <div className="flex items-center gap-2">
+                  {/* Progress indicator for grid view */}
+                  {viewMode === 'grid' && (
+                    <div className="relative w-8 h-8">
+                      <svg className="w-8 h-8 transform -rotate-90">
+                        <circle
+                          cx="16"
+                          cy="16"
+                          r="12"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          fill="none"
+                          className="text-white/10"
+                        />
+                        <circle
+                          cx="16"
+                          cy="16"
+                          r="12"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          fill="none"
+                          strokeDasharray={`${2 * Math.PI * 12}`}
+                          strokeDashoffset={`${2 * Math.PI * 12 * (1 - (project.progress || 0) / 100)}`}
+                          className="text-brand-teal transition-all duration-300"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <span className="absolute inset-0 flex items-center justify-center text-[8px] font-medium text-white">
+                        {project.progress || 0}%
+                      </span>
+                    </div>
+                  )}
+                  {canCreate && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        handleEdit(project)
+                      }}
+                      className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ring-1 ${STATUS_COLORS[project.status]}`}>
+                    {project.status.replace('_', ' ')}
+                  </span>
+                </div>
               </div>
 
               {project.description && (
@@ -156,12 +307,12 @@ export default function ProjectsPage() {
               {/* Tags */}
               {project.tags?.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-4">
-                  {project.tags.slice(0, 3).map((tag: string) => (
+              {Array.isArray(project.tags) ? project.tags.slice(0, 3).map((tag: string) => (
                     <span key={tag} className="flex items-center gap-1 text-[10px] bg-white/5 text-zinc-500 px-2 py-0.5 rounded-md">
                       <Tag className="w-2.5 h-2.5" />
                       {tag}
                     </span>
-                  ))}
+                  )) : null}
                 </div>
               )}
 
@@ -171,6 +322,20 @@ export default function ProjectsPage() {
                   <CheckSquare className="w-3.5 h-3.5" />
                   <span>{project._count?.tasks || 0} tasks</span>
                 </div>
+                {/* Progress bar for list view */}
+                {viewMode === 'list' && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-[120px] h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-brand-teal rounded-full transition-all duration-300"
+                        style={{ width: `${project.progress || 0}%` }}
+                      />
+                    </div>
+                    <span className="text-brand-teal font-medium text-[10px]">
+                      {project.progress || 0}%
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1">
                   <Users className="w-3.5 h-3.5" />
                   <span>{(project.members?.length || 0) + 1} members</span>
@@ -184,7 +349,7 @@ export default function ProjectsPage() {
           ))}
 
           {filtered.length === 0 && !loading && (
-            <div className="col-span-full flex flex-col items-center justify-center py-20 text-zinc-600">
+            <div className={`col-span-full flex flex-col items-center justify-center py-20 text-zinc-600 ${viewMode === 'list' ? 'col-span-full' : ''}`}>
               <FolderKanban className="w-12 h-12 mb-3 opacity-30" />
               <p className="text-lg font-medium">No projects found</p>
               <p className="text-sm">Try adjusting your filters or create a new project</p>
@@ -198,7 +363,7 @@ export default function ProjectsPage() {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#09090B] border border-white/10 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto animate-slide-up">
             <div className="flex items-center justify-between p-6 border-b border-white/10">
-              <h2 className="font-rubik font-bold text-white text-lg">Create New Project</h2>
+              <h2 className="font-rubik font-bold text-xl text-white">{editingProject ? 'Edit Project' : 'Create New Project'}</h2>
               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-white/5 rounded-xl text-zinc-400">
                 <X className="w-5 h-5" />
               </button>
@@ -211,6 +376,77 @@ export default function ProjectsPage() {
                   required placeholder="e.g. Website Redesign"
                   className="w-full px-4 py-2.5 bg-[#18181B] border border-white/10 rounded-xl text-white placeholder-zinc-600 focus:border-brand-teal focus:ring-4 focus:ring-brand-teal/10 outline-none transition-all"
                 />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-1.5">Assigned By</label>
+                  <input
+                    type="text"
+                    value={user?.name || ''}
+                    readOnly
+                    className="w-full px-4 py-2.5 bg-[#18181B] border border-white/10 rounded-xl text-white opacity-60 cursor-not"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-1.5">Project Owners *</label>
+                  <div className="relative" ref={ownerDropdownRef}>
+                    <div 
+                      className="w-full px-4 py-2.5 bg-[#18181B] border border-white/10 rounded-xl text-white cursor-pointer focus:border-brand-teal outline-none transition-all min-h-[42px] flex flex-wrap items-center gap-2"
+                      onClick={() => setShowOwnerDropdown(!showOwnerDropdown)}
+                    >
+                      {form.ownerIds.length === 0 ? (
+                        <span className="text-zinc-600">Select project owners...</span>
+                      ) : (
+                        form.ownerIds.map(ownerId => {
+                          const owner = allUsers.find(u => u.id === ownerId)
+                          return owner ? (
+                            <span key={ownerId} className="bg-brand-teal/20 text-brand-teal px-2 py-1 rounded text-xs flex items-center gap-1">
+                              {owner.name}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setForm({ ...form, ownerIds: form.ownerIds.filter(id => id !== ownerId) })
+                                }}
+                                className="hover:text-brand-mint"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ) : null
+                        })
+                      )}
+                    </div>
+                    
+                    {showOwnerDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-[#18181B] border border-white/10 rounded-xl max-h-48 overflow-y-auto z-10">
+                        {allUsers.map(u => (
+                          <div
+                            key={u.id}
+                            onClick={() => {
+                              if (form.ownerIds.includes(u.id)) {
+                                setForm({ ...form, ownerIds: form.ownerIds.filter(id => id !== u.id) })
+                              } else {
+                                setForm({ ...form, ownerIds: [...form.ownerIds, u.id] })
+                              }
+                            }}
+                            className="px-4 py-2 text-sm text-white cursor-pointer hover:bg-white/5 flex items-center gap-2"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={form.ownerIds.includes(u.id)}
+                              onChange={() => {}}
+                              className="rounded border-white/20 bg-white/10 text-brand-teal focus:ring-brand-teal focus:ring-offset-0 pointer-events-none"
+                            />
+                            <span>{u.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-1.5">Description</label>
@@ -280,9 +516,12 @@ export default function ProjectsPage() {
                   className="flex-1 py-2.5 border border-white/20 text-white rounded-xl hover:bg-white/5 transition-all">
                   Cancel
                 </button>
-                <button type="submit"
-                  className="flex-1 py-2.5 bg-gradient-to-r from-brand-teal to-brand-mint text-black font-bold rounded-xl hover:opacity-90 transition-all">
-                  Create Project
+                <button
+                  type="submit"
+                  disabled={!form.name.trim()}
+                  className="px-6 py-3 bg-brand-teal text-white rounded-xl font-medium hover:bg-brand-teal/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {editingProject ? 'Update Project' : 'Create Project'}
                 </button>
               </div>
             </form>

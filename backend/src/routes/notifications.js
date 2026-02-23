@@ -5,6 +5,35 @@ const { authenticate } = require('../middleware/auth');
 const router = express.Router();
 const prisma = new PrismaClient();
 
+router.post('/', authenticate, async (req, res) => {
+  try {
+    const { userId, title, message, type } = req.body;
+    
+    // Validate required fields
+    if (!userId || !title || !message) {
+      return res.status(400).json({ message: 'userId, title, and message are required' });
+    }
+
+    // Users can only create notifications for themselves unless they're managers/directors
+    if (userId !== req.user.id && !['MANAGING_DIRECTOR', 'HR_MANAGER', 'TEAM_LEAD'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'Not authorized to create notifications for other users' });
+    }
+
+    const notification = await prisma.notification.create({
+      data: {
+        userId,
+        title,
+        message,
+        type: type || 'INFO'
+      }
+    });
+
+    res.status(201).json(notification);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.get('/', authenticate, async (req, res) => {
   try {
     const notifications = await prisma.notification.findMany({

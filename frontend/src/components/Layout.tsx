@@ -6,13 +6,14 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api from '../api/axios'
+import { useNotifications } from '../utils/notifications'
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/tasks', label: 'Tasks', icon: CheckSquare },
   { to: '/timesheets', label: 'Timesheets', icon: Clock },
-  { to: '/users', label: 'Users', icon: Users, roles: ['MANAGING_DIRECTOR', 'HR_MANAGER'] },
+  { to: '/users', label: 'Users', icon: Users, roles: ['MANAGING_DIRECTOR', 'HR_MANAGER', 'TEAM_LEAD'] },
   { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['MANAGING_DIRECTOR', 'HR_MANAGER', 'TEAM_LEAD'] },
 ]
 
@@ -27,16 +28,19 @@ export default function Layout() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
-  const [notifCount, setNotifCount] = useState(0)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
   const profileDropdownRef = useRef<HTMLDivElement>(null)
+  const { unreadCount, refreshUnreadCount } = useNotifications()
 
   useEffect(() => {
-    api.get('/notifications').then(r => {
-      setNotifCount(r.data.filter((n: any) => !n.isRead).length)
-    }).catch(() => {})
-  }, [])
+    refreshUnreadCount()
+    
+    // Set up periodic refresh for real-time updates
+    const interval = setInterval(refreshUnreadCount, 30000) // Refresh every 30 seconds
+    
+    return () => clearInterval(interval)
+  }, [refreshUnreadCount])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -290,11 +294,14 @@ export default function Layout() {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1" />
-          <button className="relative p-2.5 bg-white/5 border border-white/10 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all">
+          <button 
+            onClick={() => navigate('/notifications')}
+            className="relative p-2.5 bg-white/5 border border-white/10 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
+          >
             <Bell className="w-5 h-5" />
-            {notifCount > 0 && (
+            {unreadCount > 0 && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-brand-orange rounded-full text-[10px] text-white font-bold flex items-center justify-center">
-                {notifCount}
+                {unreadCount}
               </span>
             )}
           </button>

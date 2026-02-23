@@ -63,6 +63,27 @@ router.post('/', authenticate, async (req, res) => {
         user: { select: { id: true, name: true } },
       },
     });
+
+    // Notify managers about timesheet submission
+    const managers = await prisma.user.findMany({
+      where: {
+        role: { in: ['MANAGING_DIRECTOR', 'HR_MANAGER', 'TEAM_LEAD'] }
+      }
+    });
+
+    for (const manager of managers) {
+      if (manager.id !== req.user.id) {
+        await prisma.notification.create({
+          data: {
+            userId: manager.id,
+            title: 'Timesheet Submitted',
+            message: `${req.user.name} has submitted their timesheet for ${new Date(date).toLocaleDateString()}.`,
+            type: 'TIMESHEET_SUBMITTED',
+          },
+        });
+      }
+    }
+
     res.status(201).json(timesheet);
   } catch (err) {
     res.status(500).json({ message: err.message });

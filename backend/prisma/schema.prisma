@@ -110,6 +110,7 @@ model Task {
   parent      Task?        @relation("SubTasks", fields: [parentId], references: [id])
   subtasks    Task[]       @relation("SubTasks")
   tags        String?
+  delayNotified Boolean  @default(false)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 

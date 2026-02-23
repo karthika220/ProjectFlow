@@ -8,12 +8,14 @@ const ROLE_LABELS: Record<string, string> = {
   MANAGING_DIRECTOR: 'Managing Director',
   HR_MANAGER: 'HR Manager',
   TEAM_LEAD: 'Team Lead',
+  MANAGER: 'Manager',
   EMPLOYEE: 'Employee',
 }
 const ROLE_COLORS: Record<string, string> = {
   MANAGING_DIRECTOR: 'bg-brand-orange/15 text-brand-orange ring-brand-orange/30',
   HR_MANAGER: 'bg-brand-teal/15 text-brand-teal ring-brand-teal/30',
   TEAM_LEAD: 'bg-yellow-500/15 text-yellow-400 ring-yellow-500/30',
+  MANAGER: 'bg-blue-500/15 text-blue-400 ring-blue-500/30',
   EMPLOYEE: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/30',
 }
 
@@ -29,7 +31,8 @@ export default function UsersPage() {
     name: '', email: '', password: '', role: 'EMPLOYEE', department: '',
   })
 
-  const canManage = ['MANAGING_DIRECTOR', 'HR_MANAGER'].includes(currentUser?.role || '')
+  const canManage = ['MANAGING_DIRECTOR'].includes(currentUser?.role || '')
+  const canView = ['MANAGING_DIRECTOR', 'HR_MANAGER', 'TEAM_LEAD', 'MANAGER'].includes(currentUser?.role || '')
 
   useEffect(() => { loadUsers() }, [])
 
@@ -130,7 +133,7 @@ export default function UsersPage() {
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Tasks</th>
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Joined</th>
                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
-                {canManage && <th className="px-5 py-3.5" />}
+                {canView && <th className="px-5 py-3.5" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -156,8 +159,8 @@ export default function UsersPage() {
                     </div>
                   </td>
                   <td className="px-5 py-4">
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ring-1 ${ROLE_COLORS[u.role]}`}>
-                      {ROLE_LABELS[u.role]}
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ring-1 ${ROLE_COLORS[u.role || 'MANAGER']}`}>
+                      {ROLE_LABELS[u.role || 'Manager']}
                     </span>
                   </td>
                   <td className="px-5 py-4">
@@ -175,7 +178,7 @@ export default function UsersPage() {
                       {u.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  {canManage && (
+                  {canView && (
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={() => openEdit(u)}

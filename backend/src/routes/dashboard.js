@@ -235,20 +235,26 @@ router.get('/milestones', authenticate, async (req, res) => {
     const fourteenDaysFromNow = new Date();
     fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
     
-    // Apply user role filters (same as projects endpoint)
-    const projectFilter = {};
+    // Apply user role filters - get project IDs first
+    let projectIds = [];
     if (req.user.role === 'EMPLOYEE' || req.user.role === 'TEAM_LEAD') {
-      projectFilter.OR = [
-        { ownerId: req.user.id },
-        { members: { some: { userId: req.user.id } } },
-      ];
+      const userProjects = await prisma.project.findMany({
+        where: {
+          OR: [
+            { ownerId: req.user.id },
+            { members: { some: { userId: req.user.id } } },
+          ],
+        },
+        select: { id: true }
+      });
+      projectIds = userProjects.map(p => p.id);
     }
     
     const milestones = await prisma.milestone.findMany({
       where: {
         targetDate: { gte: new Date(), lte: fourteenDaysFromNow },
         isCompleted: false,
-        project: projectFilter
+        ...(projectIds.length > 0 && { projectId: { in: projectIds } })
       },
       include: {
         project: {
@@ -271,26 +277,27 @@ router.get('/activity', authenticate, async (req, res) => {
   try {
     console.log('Dashboard activity - User:', { id: req.user.id, role: req.user.role });
     
-    // Apply user role filters (same as projects endpoint)
-    const projectFilter = {};
+    // Apply user role filters - get project IDs first
+    let projectIds = [];
     if (req.user.role === 'EMPLOYEE' || req.user.role === 'TEAM_LEAD') {
-      projectFilter.OR = [
-        { ownerId: req.user.id },
-        { members: { some: { userId: req.user.id } } },
-      ];
+      const userProjects = await prisma.project.findMany({
+        where: {
+          OR: [
+            { ownerId: req.user.id },
+            { members: { some: { userId: req.user.id } } },
+          ],
+        },
+        select: { id: true }
+      });
+      projectIds = userProjects.map(p => p.id);
     }
     
     const activities = await prisma.activity.findMany({
       where: {
-        project: projectFilter
+        ...(projectIds.length > 0 && { projectId: { in: projectIds } })
       },
       orderBy: { createdAt: 'desc' },
-      take: 10,
-      include: {
-        user: {
-          select: { name: true }
-        }
-      }
+      take: 10
     });
     
     console.log('Dashboard activity result:', activities.length, 'activities');

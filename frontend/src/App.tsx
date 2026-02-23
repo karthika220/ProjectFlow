@@ -14,6 +14,7 @@ import ProfilePage from './pages/ProfilePage'
 import ProfileEditPage from './pages/ProfileEditPage'
 import NotificationSettingsPage from './pages/NotificationSettingsPage'
 import SettingsSecurityPage from './pages/SettingsSecurityPage'
+import NotificationsPage from './pages/NotificationsPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore()
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="users" element={<UsersPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="timesheets" element={<TimesheetPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="profile/edit" element={<ProfileEditPage />} />
           <Route path="settings/notifications" element={<NotificationSettingsPage />} />

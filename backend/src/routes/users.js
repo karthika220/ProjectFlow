@@ -42,8 +42,8 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/users (create user - MD/HR only)
-router.post('/', authenticate, authorize('MANAGING_DIRECTOR', 'HR_MANAGER'), async (req, res) => {
+// POST /api/users (create user - MD only)
+router.post('/', authenticate, authorize('MANAGING_DIRECTOR'), async (req, res) => {
   try {
     const { email, password, name, role, department } = req.body;
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -63,15 +63,15 @@ router.post('/', authenticate, authorize('MANAGING_DIRECTOR', 'HR_MANAGER'), asy
 // PUT /api/users/:id
 router.put('/:id', authenticate, async (req, res) => {
   try {
-    const canEdit = req.user.role === 'MANAGING_DIRECTOR' || req.user.role === 'HR_MANAGER' || req.user.id === req.params.id;
+    const canEdit = req.user.role === 'MANAGING_DIRECTOR' || req.user.role === 'HR_MANAGER' || req.user.role === 'TEAM_LEAD' || req.user.id === req.params.id;
     if (!canEdit) return res.status(403).json({ message: 'Access denied' });
 
     const { name, department, role, isActive, password } = req.body;
     const data = {};
     if (name) data.name = name;
     if (department !== undefined) data.department = department;
-    if (role && (req.user.role === 'MANAGING_DIRECTOR' || req.user.role === 'HR_MANAGER')) data.role = role;
-    if (isActive !== undefined && (req.user.role === 'MANAGING_DIRECTOR' || req.user.role === 'HR_MANAGER')) data.isActive = isActive;
+    if (role && (req.user.role === 'MANAGING_DIRECTOR' || req.user.role === 'HR_MANAGER' || req.user.role === 'TEAM_LEAD' || req.user.role === 'MANAGER')) data.role = role;
+    if (isActive !== undefined && (req.user.role === 'MANAGING_DIRECTOR' || req.user.role === 'HR_MANAGER' || req.user.role === 'TEAM_LEAD' || req.user.role === 'MANAGER')) data.isActive = isActive;
     if (password) data.password = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.update({
